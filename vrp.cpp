@@ -1,9 +1,15 @@
 /*
-Reads a single text file.
-PD pairs are sorted based on largest round trip distance and earliest deadline
-Shift operator
-Exchange operator
-*/
+ * Params set are different
+ * Reads a single text file.
+ * PD pairs are sorted based on largest round trip distance and earliest deadline and used only least cost
+ * Shift operator
+ * Exchange operator
+ * Rearrange operator
+ * DSL
+ * Metropolis
+ * K-restart
+ * Timestamp
+ */
 
 #include <iostream>
 #include <unordered_map>
@@ -15,10 +21,18 @@ Exchange operator
 #include <fstream>
 #include <string>
 #include <stdio.h>
-#include <string.h>
+#include <string>
 #include <cmath>
+#include <time.h>
 
 using namespace std;
+
+int nDemandIdx = 2;
+int nStartTimeIdx = 3;
+int nEndTimeIdx = 4;
+int nServiceTimeIdx = 5;
+int nPickupIdx = 6;
+int nDeliveryIdx = 7;
 
 struct Sol
 {
@@ -26,7 +40,7 @@ struct Sol
     float TC;
     float SD;
     float WT;
-    vector<vector<int>> vectRoute; // n (vehciles/routes) x m (no of locations in each route)
+    vector<vector<int>> vectRoute; 
     bool operator<(const Sol &other) const
     {
         if (TC != other.TC)
@@ -39,37 +53,36 @@ struct Sol
     }
 };
 
-template <typename S>
-auto select_random(const S &s, size_t n)
-{
-    auto it = std::begin(s);
-    std::advance(it, n);
-    return it;
-}
-
-void printVector(vector<int> a)
-{
-    for (auto x : a)
-        std::cout << x << " ";
-    std::cout << endl;
-}
-
 float dist(vector<int> vTask1, vector<int> vTask2)
 {
     float fVal = sqrt(pow(vTask1.at(0) - vTask2.at(0), 2) + pow(vTask1.at(1) - vTask2.at(1), 2));
     return floor(fVal * 100.0) / 100.0;
 }
 
+unordered_map<int, float> saveDepotToX(unordered_map<int, vector<int>> mapTask)
+{
+    unordered_map<int, float> mapDistDepToX;
+    for (auto itr = mapTask.begin(); itr != mapTask.end(); itr++)
+    {
+        mapDistDepToX[itr->first] = dist(mapTask.at(0), itr->second);
+    }
+    return mapDistDepToX;
+}
+
 Sol populateSolution(Sol SolX, unordered_map<int, vector<int>> mapTask)
 {
+    for (int i = 0; i < SolX.vectRoute.size();)
+    {
+        if (SolX.vectRoute[i].size() == 0)
+            SolX.vectRoute.erase(SolX.vectRoute.begin() + i);
+        else
+            ++i;
+    }
+
     int NV = SolX.vectRoute.size();
     float TC = 0, SD = 0, WT = 0;
     vector<float> vectSD(SolX.vectRoute.size(), 0);
-    int nStartTimeIdx = 3;
-    int nEndTimeIdx = 4;
-    int nServiceTimeIdx = 5;
-    int nPickupIdx = 6;
-    int nDeliveryIdx = 7;
+    
     for (int i = 0; i < SolX.vectRoute.size(); i++)
     {
         for (int j = 0; j < SolX.vectRoute.at(i).size(); j++)
@@ -85,11 +98,6 @@ Sol populateSolution(Sol SolX, unordered_map<int, vector<int>> mapTask)
                 if (vectSD[i] < mapTask.at(nCurTask).at(nStartTimeIdx))
                 {
                     WT += mapTask.at(nCurTask).at(nStartTimeIdx) - vectSD[i];
-                    // if (WT == 0)
-                    // {
-                    //     std::cout << "WT is 0\n";
-                    //     std::this_thread::sleep_for(50ms);
-                    // }
                     vectSD[i] = mapTask.at(nCurTask).at(nStartTimeIdx) + mapTask.at(nCurTask).at(nServiceTimeIdx);
                 }
                 else
@@ -104,11 +112,6 @@ Sol populateSolution(Sol SolX, unordered_map<int, vector<int>> mapTask)
                 if (vectSD[i] < mapTask.at(nCurTask).at(nStartTimeIdx))
                 {
                     WT += mapTask.at(nCurTask).at(nStartTimeIdx) - vectSD[i];
-                    // if (WT == 0)
-                    // {
-                    //     std::cout << "WT is 0\n";
-                    //     std::this_thread::sleep_for(50ms);
-                    // }
                     vectSD[i] = mapTask.at(nCurTask).at(nStartTimeIdx) + mapTask.at(nCurTask).at(nServiceTimeIdx);
                 }
                 else
@@ -119,10 +122,12 @@ Sol populateSolution(Sol SolX, unordered_map<int, vector<int>> mapTask)
         }
         SD += vectSD[i];
     }
+
     SolX.TC = TC;
     SolX.SD = SD;
     SolX.NV = NV;
     SolX.WT = WT;
+
     return SolX;
 }
 
@@ -154,27 +159,13 @@ float distCost(unordered_map<int, vector<int>> mapTask, vector<int> vctRoute)
     return TC;
 }
 
-unordered_map<int, float> saveDepotToX(unordered_map<int, vector<int>> mapTask)
-{
-    unordered_map<int, float> mapDistDepToX;
-    for (auto itr = mapTask.begin(); itr != mapTask.end(); itr++)
-    {
-        mapDistDepToX[itr->first] = dist(mapTask.at(0), itr->second);
-    }
-    return mapDistDepToX;
-}
-
 bool checkRouteFeasibility(vector<int> vRoute, unordered_map<int, vector<int>> mapTask, int nMaxLoad)
 {
     int nLoad = 0;
     float SD = 0;
-    int nStartTimeIdx = 3;
-    int nEndTimeIdx = 4;
-    int nServiceTimeIdx = 5;
-    int nDemand = 2;
     for (int i = 0; i < vRoute.size(); i++)
     {
-        nLoad += mapTask.at(vRoute[i]).at(nDemand);
+        nLoad += mapTask.at(vRoute[i]).at(nDemandIdx);
         if (nLoad > nMaxLoad)
         {
             return false;
@@ -210,8 +201,6 @@ Sol insertPDPair(Sol SolX, int pTask, unordered_map<int, vector<int>> mapTask, i
     double minCost = DBL_MAX;
     int nRouteIdx;
     vector<int> vRoute;
-    int nDemanndIdx = 2;
-    int nDeliveryIdx = 7;
     for (int i = 0; i < SolX.vectRoute.size(); i++)
     {
         for (int j = 0; j < SolX.vectRoute.at(i).size() + 1; j++)
@@ -230,9 +219,6 @@ Sol insertPDPair(Sol SolX, int pTask, unordered_map<int, vector<int>> mapTask, i
                         vRoute = tempRoute;
                         nRouteIdx = i;
                     }
-                }
-                else
-                {
                 }
                 tempRoute.erase(tempRoute.begin() + k);
             }
@@ -256,23 +242,17 @@ Sol insertPDPair(Sol SolX, int pTask, unordered_map<int, vector<int>> mapTask, i
 vector<vector<int>> insertPDtoRoute(int pTask, vector<int> vRoute, unordered_map<int, vector<int>> mapTask, int nMaxLoad)
 {
     vector<vector<int>> feasibleRoutes; // check why sets can't be used
-    int nDeliveryIdx = 7;
-    // std::cout << "check 10\n";
     for (int i = 0; i < vRoute.size() + 1; i++)
     {
-        // std::cout << "check 11\n";
         vRoute.insert(vRoute.begin() + i, pTask);
         for (int j = i + 1; j < vRoute.size() + 1; j++)
         {
-            // std::cout << "check 12\n";
             int dTask = mapTask.at(pTask).at(nDeliveryIdx);
             vRoute.insert(vRoute.begin() + j, dTask);
-            // printVector(vRoute);
             if (checkRouteFeasibility(vRoute, mapTask, nMaxLoad))
             {
                 feasibleRoutes.push_back(vRoute);
             }
-            // std::cout << "check 12\n";
             vRoute.erase(vRoute.begin() + j);
         }
         vRoute.erase(vRoute.begin() + i);
@@ -283,23 +263,15 @@ vector<vector<int>> insertPDtoRoute(int pTask, vector<int> vRoute, unordered_map
 vector<vector<int>> generateRoutes(vector<int> route, unordered_map<int, vector<int>> mapTask, int nMaxLoad)
 {
     vector<vector<int>> listRoutes;
-    int nPickupIdx = 6;
-    int nDeliveryIdx = 7;
     for (int i = 0; i < route.size(); i++)
     {
-        // std::cout << route.at(i) << " is the task at route(" << i << ")\n";
-        // std::cout << mapTask.at(route.at(i)).at(nPickupIdx) << " == 0?\n";
-
         if (mapTask.at(route.at(i)).at(nPickupIdx) == 0)
         {
-            // std::cout << i << " i in if\n";
             int nSaveP = route.at(i);
             int nSavePIdx = i;
             int nSaveD;
             int nSaveDIdx;
 
-            // std::cout << nSaveP << " nSaveP\n";
-            // std::cout << nSavePIdx << " nSaveP\n";
             route.erase(route.begin() + nSavePIdx);
             for (int k = nSavePIdx; k < route.size(); k++)
             {
@@ -310,8 +282,6 @@ vector<vector<int>> generateRoutes(vector<int> route, unordered_map<int, vector<
                     break;
                 }
             }
-            // std::cout << nSaveD << " nSaveD\n";
-            // std::cout << nSaveDIdx << " nSaveDIdx\n";
             route.erase(route.begin() + nSaveDIdx);
 
             for (int x = 0; x < route.size(); x++)
@@ -320,9 +290,6 @@ vector<vector<int>> generateRoutes(vector<int> route, unordered_map<int, vector<
                 for (int y = x + 1; y < route.size(); y++)
                 {
                     route.insert(route.begin() + y, nSaveD);
-                    // for (auto c : route)
-                    //     std::cout << c << " ";
-                    // std::cout << endl;
                     if (checkRouteFeasibility(route, mapTask, nMaxLoad))
                     {
                         listRoutes.push_back(route);
@@ -342,7 +309,7 @@ vector<vector<int>> generateRoutes(vector<int> route, unordered_map<int, vector<
 void printSolution(Sol SolX, int maxVehicles)
 {
     if (SolX.NV > maxVehicles)
-        std::cout << "\nMax no of vechiles is set as " << maxVehicles << ". It is exceeded\n";
+        std::cout << "\nMax no of vechiles allocated has exceeded the limit\n";
     std::cout << "\nObjective cost: " << cost(SolX) << endl;
     std::cout << "Number of vehicles: " << SolX.NV << endl;
     std::cout << "Total cost: " << SolX.TC << endl;
@@ -363,31 +330,21 @@ void printSolution(Sol SolX, int maxVehicles)
 
 set<Sol> PDShiftOperator(Sol SolX, unordered_map<int, vector<int>> mapTask, int nMaxLoad)
 {
-    int nPickupIdx = 6;
-    int nDeliveryIdx = 7;
     set<Sol> nyborSols;
     vector<vector<int>> vectRoutes = SolX.vectRoute;
-    // std::cout << "check 1" << endl;
     for (int i = 0; i < vectRoutes.size(); i++)
-    { // visualise 2D matrix of routeNos -> to take pair of routes (see 2.)
-        // std::cout << "check 2\n";
+    { 
         for (int j = 0; j < vectRoutes.size(); j++)
-        { // selects both (i,j) and (j,i)
-            // std::cout << "check 3\n";
+        { 
             if (i != j)
-            { // taken all pairs of routes
+            { 
                 for (int k = 0; k < vectRoutes.at(i).size(); k++)
-                { // NOTE: i/j
-                    // needs a functions which takes one route and a PD pair and checks all possible feasible positions and returns all routes
-                    // std::cout << "check 4\n";
+                { 
                     if (mapTask.at(vectRoutes[i][k]).at(nPickupIdx) == 0)
-                    { // choose P from route i and fix in route j
-                        // std::cout << "check 5\n";
+                    { 
                         vector<vector<int>> feasibleRoutes = insertPDtoRoute(vectRoutes.at(i).at(k), vectRoutes.at(j), mapTask, nMaxLoad);
-                        // std::cout << "check 6\n";
                         if (!feasibleRoutes.empty())
-                        { //          if  there's feasible routes
-                            // std::cout << "check 7\n";
+                        { 
                             int nSaveP = vectRoutes[i][k];
                             vectRoutes[i].erase(vectRoutes[i].begin() + k);
                             int nSaveD;
@@ -407,15 +364,11 @@ set<Sol> PDShiftOperator(Sol SolX, unordered_map<int, vector<int>> mapTask, int 
 
                             for (auto it = feasibleRoutes.begin(); it != feasibleRoutes.end(); it++)
                             {
-                                // std::cout << "check 8\n";
                                 Sol SolY = SolX;
                                 SolY.vectRoute.at(i) = vectRoutes.at(i);
                                 SolY.vectRoute.at(j) = *it;
                                 SolY = populateSolution(SolY, mapTask);
-                                // printSolution(SolY, 20);
                                 nyborSols.insert(SolY);
-                                // if (nyborSols.size() == nOfSols)
-                                //     return nyborSols;
                             }
 
                             vectRoutes[i].insert(vectRoutes[i].begin() + nDIdxOfK, nSaveD);
@@ -431,28 +384,21 @@ set<Sol> PDShiftOperator(Sol SolX, unordered_map<int, vector<int>> mapTask, int 
 
 set<Sol> PDExchangeOperator(Sol SolX, /*int nOfSols,*/ unordered_map<int, vector<int>> mapTask, int nMaxLoad)
 {
-
-    int nPickupIdx = 6;
-    int nDeliveryIdx = 7;
     set<Sol> nyborSols;
     vector<vector<int>> vectRoutes = SolX.vectRoute;
-    // std::cout << "check 1" << endl;
     for (int i = 0; i < vectRoutes.size(); i++)
-    { // visualise 2D matrix of routeNos -> to take pair of routes (see 2.)
-        // std::cout << "check 2\n";
+    { 
         for (int j = 0; j < vectRoutes.size(); j++)
-        { // selects both (i,j) and (j,i)
-            // std::cout << "check 3\n";
+        { 
             if (i != j)
-            { // taken all pairs of routes
+            { 
                 for (int k = 0; k < vectRoutes.at(i).size(); k++)
                 {
                     int nCurElemntInI = vectRoutes.at(i).at(k);
                     if (mapTask.at(nCurElemntInI).at(nPickupIdx) == 0)
-                    { // if pickup: we need the P to take the D
+                    { 
                         int nSavePi = nCurElemntInI;
                         int nSavePiIdx = k;
-                        // remove one pair
                         int nSaveDi;
                         int nSaveDiIdx;
 
@@ -469,7 +415,7 @@ set<Sol> PDExchangeOperator(Sol SolX, /*int nOfSols,*/ unordered_map<int, vector
                         vectRoutes.at(i).erase(vectRoutes.at(i).begin() + nSaveDiIdx);
 
                         for (int l = 0; l < vectRoutes.at(j).size(); l++)
-                        { // equivalent ot for k loop
+                        { 
                             int nCurElemntInJ = vectRoutes.at(j).at(l);
                             if (mapTask.at(nCurElemntInJ).at(nPickupIdx) == 0)
                             {
@@ -489,11 +435,9 @@ set<Sol> PDExchangeOperator(Sol SolX, /*int nOfSols,*/ unordered_map<int, vector
                                     }
                                 }
                                 vectRoutes.at(j).erase(vectRoutes.at(j).begin() + nSaveDjIdx);
-                                // do task , call func
 
                                 vector<int> routeI = vectRoutes.at(i);
                                 vector<int> routeJ = vectRoutes.at(j);
-
                                 vector<vector<int>> feasibleRouteIs = insertPDtoRoute(nSavePj, routeI, mapTask, nMaxLoad);
                                 vector<vector<int>> feasibleRouteJs = insertPDtoRoute(nSavePi, routeJ, mapTask, nMaxLoad);
 
@@ -507,22 +451,16 @@ set<Sol> PDExchangeOperator(Sol SolX, /*int nOfSols,*/ unordered_map<int, vector
                                             SolY.vectRoute.at(i) = feasibleRouteIs.at(a);
                                             SolY.vectRoute.at(j) = feasibleRouteJs.at(b);
                                             SolY = populateSolution(SolY, mapTask);
-                                            // printSolution(SolY, 20);
                                             nyborSols.insert(SolY);
-                                            // if (nyborSols.size() == nOfSols)
-                                            //     return nyborSols;
                                         }
                                     }
                                 }
-
                                 vectRoutes.at(j).insert(vectRoutes.at(j).begin() + nSaveDjIdx, nSaveDj);
                                 vectRoutes.at(j).insert(vectRoutes.at(j).begin() + nSavePjIdx, nSavePj);
                             }
                         }
-
                         vectRoutes.at(i).insert(vectRoutes.at(i).begin() + nSaveDiIdx, nSaveDi);
                         vectRoutes.at(i).insert(vectRoutes.at(i).begin() + nSavePiIdx, nSavePi);
-                        // insert that pair
                     }
                 }
             }
@@ -534,7 +472,6 @@ set<Sol> PDExchangeOperator(Sol SolX, /*int nOfSols,*/ unordered_map<int, vector
 set<Sol> PDRearrangeOperator(Sol SolX, /*int nOfSols,*/ unordered_map<int, vector<int>> mapTask, int nMaxLoad)
 {
     set<Sol> nyborSols;
-    // set<float> setCosts;
     vector<vector<int>> feasibleRoutes;
     for (int i = 0; i < SolX.vectRoute.size(); i++)
     {
@@ -549,8 +486,6 @@ set<Sol> PDRearrangeOperator(Sol SolX, /*int nOfSols,*/ unordered_map<int, vecto
                 SolY.vectRoute.at(i) = feasibleRoutes.at(j);
                 SolY = populateSolution(SolY, mapTask);
                 double thisCost = cost(SolY);
-                // std::cout << "mincost " << minCost << endl;
-                // std::cout << "thiscost " << thisCost << endl;
                 if (thisCost < minCost)
                 {
                     bestSol = SolY;
@@ -558,14 +493,10 @@ set<Sol> PDRearrangeOperator(Sol SolX, /*int nOfSols,*/ unordered_map<int, vecto
                 }
             }
             nyborSols.insert(bestSol);
-            // if (nyborSols.size() == nOfSols)
-            //     return nyborSols;
         }
         else
         {
             nyborSols.insert(SolX);
-            // if (nyborSols.size() == nOfSols)
-            //     return nyborSols;
         }
     }
     return nyborSols;
@@ -624,43 +555,43 @@ Sol DSL(Sol SolX, int /* 0:SE, !0: R*/ method, int nOfTimes, unordered_map<int, 
 
 Sol metropolis(Sol SolX, int T, float T0, float delta, set<Sol> &tabuSet, unordered_map<int, vector<int>> mapTask, int nMaxLoad)
 {
-    // Sol S1;
+    const double e = 2.718281828;
+    float prob;
     set<Sol> PDShiftNeighbourSols = PDShiftOperator(SolX, mapTask, nMaxLoad);
-    set<Sol> PDExchangeNeighbourSols = PDExchangeOperator(SolX,mapTask, nMaxLoad);
+    set<Sol> PDExchangeNeighbourSols = PDExchangeOperator(SolX, mapTask, nMaxLoad);
     set<Sol> UnionOfShitExchangeSets;
-
-    // std::cout << "Size of PDShiftOperator set is " << PDShiftNeighbourSols.size() << endl;
-    // std::cout << "Size of PDExchangeOperator set is " << PDExchangeNeighbourSols.size() << endl;
 
     UnionOfShitExchangeSets.insert(PDShiftNeighbourSols.begin(), PDShiftNeighbourSols.end());
     UnionOfShitExchangeSets.insert(PDExchangeNeighbourSols.begin(), PDExchangeNeighbourSols.end());
 
-    const double e = 2.718281828;
-    float prob;
-
-    // std::cout << "Size of UnionSE set is " << UnionOfShitExchangeSets.size() << endl;
-
     while (T > T0)
     {
-        int k = 0;
         Sol randSol;
-        int i = 0;
-        for (auto it = UnionOfShitExchangeSets.begin(); it != UnionOfShitExchangeSets.end(); it++)
+        int randomCheckLimit  = 20;
+        int i;
+        const int range_from  = 0;
+        const int range_to    = UnionOfShitExchangeSets.size() - 1;
+
+        for (i = 0; i < randomCheckLimit; i++) 
         {
-            if (tabuSet.find(*it) == tabuSet.end())
-            { // not in tabuset
+            std:random_device                  rand_dev;
+            std::mt19937                        generator(rand_dev());
+            std::uniform_int_distribution<int>  distr(range_from, range_to);
+            int r = distr(generator);
+            auto it = UnionOfShitExchangeSets.begin();
+            advance(it, r);
+            if (tabuSet.find(*it) == tabuSet.end()) 
+            { 
                 randSol = *it;
                 break;
-            }
-            ++i;
+            }          
         }
 
-        if (i == UnionOfShitExchangeSets.size())
+        if (i == randomCheckLimit)
         {
-            std::cout << "Check metropolis: random solution generated is present in tabuset\ntry increasing the no of solns\n";
+            std::cout << "Random solution generated is present in Tabuset\nIncrease randomCheckLimit > 20\n";
+            randSol = SolX;
         }
-
-        // std::cout << "Val i " << i << endl;
 
         float DETLTA = SACost(randSol) - SACost(SolX);
         if (DETLTA <= 0)
@@ -671,128 +602,56 @@ Sol metropolis(Sol SolX, int T, float T0, float delta, set<Sol> &tabuSet, unorde
         {
             prob = pow(e, -(DETLTA / T));
         }
+
         if ((float)rand() / (float)RAND_MAX <= prob)
         {
             tabuSet.insert(randSol);
             return randSol;
         }
         T = delta * T;
-        // std::cout << k++ << endl;
     }
 
-    // std::cout << "Metropolis not working\n";
     return SolX;
 }
 
-// Sol tabuEmbeddedSA(Sol SolX, int MSNI, int nOfTimes, int nOfSols = 10, int T, int T0, float delta, set<Sol> &tabuSet, unordered_map<int, vector<int>> mapTask, int nMaxLoad)
-// {
-//     Sol Sb = DSL(SolX, 0, nOfTimes, nOfSols, mapTask, nMaxLoad);
-//     Sb = DSL(SolX, 1, nOfTimes, nOfSols, mapTask, nMaxLoad);
-//     int NoImpr = 0;
-//     Sol S = Sb;
-//     Sol S1;
-//     while (NoImpr < MSNI)
-//     {
-//         // Step 5.1
-//         S1 = metropolis(S, nOfSols, T, T0, delta, tabuSet, mapTask, nMaxLoad);
-//         vector<vector<int>> vS = S.vectRoute;
-//         vector<vector<int>> vS1 = S1.vectRoute;
-//         int n = min(vS.size(), vS1.size());
-//         vector<int> recordRoute;
-
-//         // Step 5.1 recording routes (why just 2 routes? what if there are 0 or >2?)
-//         for (int i = 0; i < n; i++) {
-//             if (!equal(vS.at(i).begin(), vS.at(i).begin() + n, vS1.begin())) {
-//                 recordRoute.push_back(i);
-//             }
-//             if (recordRoute.size() == 2) {
-//                 break;
-//             }
-//         }
-
-//         // Step 5.2 reduce no of vehicles, where to save the solution after reducing the no of vehicles?
-//         set<Sol> PDShift = PDShiftOperator(S1, nOfSols, mapTask, nMaxLoad);
-//         Sol bestObjCostSol; // saved in here, but this solution in not beign used.
-//         float bestCost = FLT_MAX;
-
-//         for (auto it = PDShift.begin(); it != PDShift.end(); it++) {
-//             if (cost(*it) < bestCost) {
-//                 bestCost = cost(*it);
-//                 bestObjCostSol = *it;
-//             }
-//         }
-
-//         if (bestCost == FLT_MAX) {
-//             std::cout << " Step 5.2: No mincost obtained\n";
-//         }
-//         else {
-//             // S1 = bestObjCostSol;
-//             /* result of 5.2 is written back on S1
-//             * but this will collide with the write of 5.3 on 5.1
-//             */
-//            std::cout << " Step 5.2: Nothing done with the result of this code block\n";
-//         }
-
-//         // Step 5.3 is done on 5.1, what to do with the result of 5.2?
-//         if (recordRoute.size() >= 2) {
-//             // ______________________RESUME______________________
-//             //Take the two routes; rearrange by best tc; insert into S1
-//             // S1.vectRoute.at(0) =
-//         }
-//         else {
-//             std::cout << " Step 5.3: No two modified routes after PDS/PDE is found\n";
-//         }
-//         Sol S1b = DSL(S1, 0, nOfTimes, nOfSols, mapTask, nMaxLoad);
-//         S1b = DSL(S1b, 1, nOfTimes, nOfSols, mapTask, nMaxLoad);
-
-//         if (cost(S1b) < cost(Sb)) {
-//             Sb = S1b;
-//             NoImpr = 0;
-//         }
-//         else {
-//             NoImpr += 1;
-//         }
-//         S = S1b;
-//     }
-//     return Sb;
-// }
-
-vector<Sol> bestOfX(set<Sol> setSol, int count, unordered_map<int, vector<int>> mapTask, int nMaxLoad) {
+vector<Sol> bestOfX(set<Sol> setSol, bool method /*0:TC | 1:cost*/, int count, unordered_map<int, vector<int>> mapTask, int nMaxLoad)
+{
     vector<pair<float, Sol>> vectPairTCSol;
-    for (auto it = setSol.begin(); it != setSol.end(); it++) {
-        vectPairTCSol.push_back(make_pair(it->TC, *it));
-    }
 
+    for (auto it = setSol.begin(); it != setSol.end(); it++)
+    {
+        if (method == 0)
+            vectPairTCSol.push_back(make_pair(it->TC, *it));
+        else
+            vectPairTCSol.push_back(make_pair(cost(*it), *it));
+    }
     sort(vectPairTCSol.begin(), vectPairTCSol.end());
 
     vector<Sol> result;
     int s = vectPairTCSol.size();
-    // std::cout << count;
     int n = min(count, s);
-    for (auto it = vectPairTCSol.begin(); it < vectPairTCSol.begin() + n; it++) {
+
+    for (auto it = vectPairTCSol.begin(); it < vectPairTCSol.begin() + n; it++)
+    {
         result.push_back(it->second);
     }
 
     return result;
 }
 
-Sol createInitialSolution(unordered_map<int, vector<int>> mapTask, int method, unordered_set<int> setTask, int nMaxLoad)
+Sol createInitialSolution(unordered_map<int, vector<int>> mapTask, /*0:Max Comb RTT | 1:Min DL*/ int method, unordered_set<int> setTask, int nMaxLoad)
 {
+    Sol SolX;
+    Sol Solution;    
     int nDepot = 0;
     int nInitPickup;
     int nInitDelivery;
-    int nEndTimeIdx = 4;
-    int nPickupIdx = 6;
-    int nDeliveryIdx = 7;
     int nEarliestTaskTime = INT_MAX;
     int nEarliestTaskNo = INT_MAX;
-    Sol Solution;
-    Sol SolX;
 
-    // farthest combined round trip distance to the depot (Depo -> P1 -> D1 -> Depo)
     if (method == 0)
     {
-        float fMaxRoundTrip = 0; // saves max round trip distance
+        float fMaxRoundTrip = 0; 
         for (auto itr = mapTask.begin(); itr != mapTask.end(); itr++)
         {
             if (itr->first != 0 && itr->second.at(nPickupIdx) == 0)
@@ -815,10 +674,11 @@ Sol createInitialSolution(unordered_map<int, vector<int>> mapTask, int method, u
         vInitRoute.push_back(nInitPickup);
         vInitRoute.push_back(nInitDelivery);
         SolX.vectRoute.push_back(vInitRoute);
+        SolX = populateSolution(SolX, mapTask);
         setTask.erase(nInitPickup);
         setTask.erase(nInitDelivery);
 
-        vector<pair<float, int>> rtDistanceToTask; // saves the <end time,delivery locations>
+        vector<pair<float, int>> rtDistanceToTask;
         for (auto it = mapTask.begin(); it != mapTask.end(); it++)
         {
             if (it->first != 0 && it->second.at(nPickupIdx) == 0)
@@ -840,7 +700,7 @@ Sol createInitialSolution(unordered_map<int, vector<int>> mapTask, int method, u
             int nSolTaskNo;
             int nIdx;
             float minCost = FLT_MAX;
-            // after exisiting the the size of rtDistanceToTask reduces by one
+
             for (int i = 0; i < rtDistanceToTask.size(); i++)
             {
                 if (setTask.find(rtDistanceToTask[i].second) != setTask.end())
@@ -866,7 +726,6 @@ Sol createInitialSolution(unordered_map<int, vector<int>> mapTask, int method, u
     }
     else
     {
-        /* Earliest entime first*/
         for (auto itr = mapTask.begin(); itr != mapTask.end(); itr++)
         {
             if (itr->first != 0 && itr->second.at(nDeliveryIdx) == 0)
@@ -884,10 +743,11 @@ Sol createInitialSolution(unordered_map<int, vector<int>> mapTask, int method, u
         vInitRoute.push_back(nInitPickup);
         vInitRoute.push_back(nInitDelivery);
         SolX.vectRoute.push_back(vInitRoute);
+        SolX = populateSolution(SolX, mapTask);
         setTask.erase(nInitPickup);
         setTask.erase(nInitDelivery);
 
-        vector<pair<int, int>> endTimesToTask; // saves the <end time,delivery locations>
+        vector<pair<int, int>> endTimesToTask; 
         for (auto it = mapTask.begin(); it != mapTask.end(); it++)
         {
             if (it->first != 0 && it->second.at(nDeliveryIdx) == 0)
@@ -904,7 +764,6 @@ Sol createInitialSolution(unordered_map<int, vector<int>> mapTask, int method, u
             int nSolTaskNo;
             int nIdx;
             float minCost = FLT_MAX;
-            // after exisiting the the size of endTimesToTask reduces by one
             for (int i = 0; i < endTimesToTask.size(); i++)
             {
                 if (setTask.find(endTimesToTask[i].second) != setTask.end())
@@ -957,7 +816,6 @@ void readData(string strFileName, unordered_map<int, vector<int>> &mapTask, unor
     int i = 0;
     while (MyFile.good())
     {
-
         vector<int> value;
         getline(MyFile, line);
         istringstream iss(line);
@@ -1013,7 +871,6 @@ void readData(string strFileName, unordered_map<int, vector<int>> &mapTask, unor
     if (setTask.size() % 2 == 1)
     {
         std::cout << "Solution requires even number of PD locations\n";
-        // std::this_thread::sleep_for(1s);
     }
 
     return;
@@ -1021,112 +878,76 @@ void readData(string strFileName, unordered_map<int, vector<int>> &mapTask, unor
 
 int main()
 {
+    clock_t tStart = clock();
     unordered_map<int, vector<int>> mapTask;
     unordered_set<int> setTask;
-    set<Sol> tabuSet;
     int nMaxVehicles, nMaxLoad;
+    string path = "D:/Projects/VRPTW/lr101.txt";
+
+    cout << path << endl;
+    readData(path, mapTask, setTask, nMaxVehicles, nMaxLoad);
+    cout << "\n---------------------------" << endl;
+    cout << (int)(clock() - tStart) / CLOCKS_PER_SEC << ": Read the input file.\n";
+
+    Sol S = createInitialSolution(mapTask, 0, setTask, nMaxLoad);
+    cout << (int)(clock() - tStart) / CLOCKS_PER_SEC << ": Initial solution created.\n";
+
+    printSolution(S, 25);
+/*
+    S = DSL(S, 0, 15, mapTask, nMaxLoad);
+    cout << (int)(clock() - tStart) / CLOCKS_PER_SEC << ": DSL with NPD U NPE executed.\n";
+
+    S = DSL(S, 1, 15, mapTask, nMaxLoad);
+    cout << (int)(clock() - tStart) / CLOCKS_PER_SEC << ": DSL with NPR executed.\n";
+
+    set<Sol> tabuSet;
+    set<Sol> afterMetro;
+    int noImpr = 0;
+    int MSNI = 3;
+    int K = 4;
+    int T = 100;
+    int T0 = 1;
     float delta = 0.9;
 
-    string path = "C:/Abhishek_work/vysakh_data_check/pdp_100/lrc202.txt";
-    readData(path, mapTask, setTask, nMaxVehicles, nMaxLoad);
-    // printData(mapTask, nMaxVehicles, nMaxLoad);
-    // 0: max round trip, non 0: earliest end time
+    cout << (int)(clock() - tStart) / CLOCKS_PER_SEC << ": Tabu Embedded SA executing...\n";
 
-    cout << "Running for file path: " ;
-    cout << path << endl;
+    for (int i = 0, k = 0; i < 10 && k < K; ++i)
+    {
+        Sol Sb = metropolis(S, T, T0, delta, tabuSet, mapTask, nMaxLoad);
+        Sb = DSL(Sb, 0, 15, mapTask, nMaxLoad);
+        Sb = DSL(Sb, 1, 15, mapTask, nMaxLoad);
+        afterMetro.insert(Sb);
 
-    Sol initSol = createInitialSolution(mapTask, 0, setTask, nMaxLoad);
-    cout << "Initial Solution";
-    printSolution(initSol, nMaxVehicles);
-    cout << "---------------------------" << endl;
-
-
-    set<Sol> afterMetro;
-    Sol pass = initSol;
-    for (int k = 0; k < 10; k++) {
-        Sol sol = metropolis(pass, 80, 0.008, delta, tabuSet, mapTask, nMaxLoad);
-        afterMetro.insert(sol);
-        // printSolution(sol, nMaxVehicles);
-        pass = DSL(sol, 1, 15, mapTask, nMaxLoad);
-        // pass = sol;
+        if (cost(Sb) < cost(S))
+        {
+            noImpr = 0;
+        }
+        else
+        {
+            ++noImpr;
+            if (noImpr >= MSNI)
+            {
+                ++k;
+                i = -1;
+                noImpr = 0;
+                S = bestOfX(afterMetro, 1, MSNI, mapTask, nMaxLoad).at(0);
+                if (k < K)
+                    cout << (int)(clock() - tStart) / CLOCKS_PER_SEC << ": No improvement, restarting - " << k << endl;
+                continue;
+            }
+        }
+        S = Sb;
+        cout << (int)(clock() - tStart) / CLOCKS_PER_SEC << ": Loop - " << i + 1 << endl;
     }
 
+    cout << (int)(clock() - tStart) / CLOCKS_PER_SEC << ": Tabu Embedded SA completed.\n";
     cout << "---------------------------" << endl;
-    vector<Sol> aftermetrosort = bestOfX( afterMetro, 5, mapTask, nMaxLoad);
-    cout << "\nBest soln after metropolis without DSL using R together\n";
+
+    vector<Sol> aftermetrosort = bestOfX(afterMetro, 1, 5, mapTask, nMaxLoad);
+    cout << "\nBest solution:";
     printSolution(aftermetrosort.at(0), nMaxVehicles);
+    */
 
-
-    Sol afterDSL = DSL(aftermetrosort.at(0), 0, 15, mapTask, nMaxLoad);
-    cout << "\nAfter DSL using Initial_solution\n";
-    printSolution(afterDSL, nMaxVehicles);
-    cout << "---------------------------" << endl;
-
-    afterDSL = DSL(afterDSL, 1, 15, mapTask, nMaxLoad);
-    cout << "\nAfter DSL using R\n";
-    printSolution(afterDSL, nMaxVehicles);
-    cout << "---------------------------" << endl;
-
-    set<Sol> sS = PDShiftOperator(afterDSL, mapTask, nMaxLoad);
-    // std::cout << "\nSize of set sS is " << sS.size() << endl;
-    vector<Sol> vS = bestOfX(sS, 5, mapTask, nMaxLoad);
-
-    // std::cout << "\nBest 5 solutions after Shift operaftor, if there are 5.\n";
-    // for (auto it = vS.begin(); it != vS.end(); it++) {
-    //     printSolution(*it, nMaxVehicles);
-    // }
-
-    cout << "\nBest solution after PDS\n";
-    printSolution(vS.at(0), nMaxVehicles);
-    cout << "---------------------------" << endl;
-
-    set<Sol> sE = PDExchangeOperator(vS.at(0), mapTask, nMaxLoad);
-    // std::cout << "\nSize of set is sE is " << sE.size() << endl;
-    vector<Sol> vE = bestOfX(sE, 5, mapTask, nMaxLoad);
-
-    // std::cout << "\nBest 5 solutions after Exchange operaftor, if there are 5.\n";
-    // for (auto it = vE.begin(); it != vE.end(); it++) {
-    //     printSolution(*it, nMaxVehicles);
-    // }
-
-    cout << "\nBest solution after PDE\n";
-    printSolution(vE.at(0), nMaxVehicles);
-    cout << "---------------------------" << endl;
-
-    set<Sol> sR = PDRearrangeOperator(vE.at(0), mapTask, nMaxLoad);
-    // cout << "\nSize of set is sR is " << sR.size() << endl;
-    vector<Sol> vR = bestOfX(sR, 5, mapTask, nMaxLoad);
-
-    // cout << "\nBest 5 solutions after Rearrange operaftor, if there are 5.\n";
-    // for (auto it = vR.begin(); it != vR.end(); it++) {
-    //     printSolution(*it, nMaxVehicles);
-    // }
-
-    cout << "\nBest solution after PDR\n";
-    printSolution(vR.at(0), nMaxVehicles);
-    cout << "---------------------------" << endl;
-
-
-
-    set<Sol> afterMetro_re;
-    Sol pass_re = vR.at(0);
-    for (int k = 0; k < 10; k++) {
-        Sol sol = metropolis(pass_re, 80, 0.008, delta, tabuSet, mapTask, nMaxLoad);
-        afterMetro_re.insert(sol);
-        // printSolution(sol, nMaxVehicles);
-        pass_re = DSL(sol, 1, 15, mapTask, nMaxLoad);
-        // pass = sol;
-    }
-
-    cout << "---------------------------" << endl;
-    vector<Sol> aftermetrosort_re = bestOfX( afterMetro_re, 5, mapTask, nMaxLoad);
-    cout << "\nBest soln after metropolis and DSL using R together\n";
-    printSolution(aftermetrosort_re.at(0), nMaxVehicles);
-
-    cout << "Results for file path: " ;
-    cout << path << endl;
 
     return 0;
 }
-
-
